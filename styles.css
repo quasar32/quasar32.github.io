@@ -1,0 +1,14 @@
+body {
+	word-wrap: break-word;
+	width: 40em;
+	margin: 0 auto;
+	background-color: #FAF9F6
+}
+
+p {
+	text-align: justify
+}
+
+h1 {
+	text-align: center;
+}

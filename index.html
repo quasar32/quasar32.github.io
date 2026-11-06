@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Two-Pass Graph Building</title>
+    <link rel="stylesheet" href="styles.css">
+    </head>
+    <body>
+        <h1>Immutable Graph Building</h1>
+        <p>
+            When constructing a graph, the set of edges is often known in advance.
+            If the graph is sparse, an adjacency matrix may 
+            be inefficient, so an adjacency list is often a better choice. This section presents two common 
+            ways to implement an adjacency list, along with a lesser-known third approach that can be more 
+            efficient for immutable graphs.
+        </p>
+        <p>
+            For each approach, the example implementation builds a graph from two parallel arrays of non-negative 
+            integers representing the edges.
+            It is assumed that node labels are compact enough for an array to map each node to its adjacency list.
+        </p>
+        <h2>Approach One: Dynamic Arrays</h2>
+        <p>
+            The simplest approach is to store each adjacency list in a dynamic array. 
+            This minimizes memory use and improves cache locality because it stores no 
+            extra data for each connection. 
+            However, each list requires a separate allocation, 
+            and adding elements can be slow when a full array needs to grow 
+            and its contents must be copied.
+        </p>
+        <p>
+            In the example implementation below, each list starts with a capacity of 
+            zero. When the first element is added, the capacity grows to four. 
+            Whenever a list fills up, its capacity doubles before the next element is added.
+        </p>
+        <pre><code>
+#include &lt;stdlib.h&gt;
+
+struct graph {
+    int **dsts; /* lists */
+    int *lens; /* list lengths */
+    int count; /* num of lists */
+};
+
+/* Credit to "https://graphics.stanford.edu/~seander/bithacks.html" for this function*/
+int ispow2(int x) {
+    return x && !(x & (x - 1));
+}
+
+int maxint(int a, int b) {
+    return a > b ? a : b;
+}
+
+void graph_create(struct graph *graph, int *srcs, int *dsts, int count) {
+    int i, max = 0;
+    /* get maximum node value */
+    for (i = 0; i < count; i++) {
+        max = maxint(srcs[i], max);
+        max = maxint(dsts[i], max);
+    }
+    graph->dsts = calloc(max + 1, sizeof(int *));
+    graph->lens = calloc(max + 1, sizeof(int));
+    graph->count = max + 1;
+    for (i = 0; i < count; i++) {
+        if (graph->lens[srcs[i]] == 0) { /* List is empty, grow to capacity four */
+            graph->dsts[srcs[i]] = malloc(4 * sizeof(int));
+        } else if (ispow2(graph->lens[srcs[i]])) { /* List is full, double capacity */
+            int newcap = graph->lens[srcs[i]] * 2;
+            graph->dsts[srcs[i]] = realloc(graph->dsts[srcs[i]], newcap * sizeof(int));
+        }
+        graph->dsts[srcs[i]][graph->lens[srcs[i]]++] = dsts[i];
+    }
+}
+
+void graph_destroy(struct graph *graph) {
+    int i;
+    for (i = 0; i < count; i++) {
+        free(graph->dsts[i]);
+        free(graph->lens[i]);
+    } 
+    free(graph->dsts);
+}
+        </pre></code>
+        <h2>Approach Two: Linked Lists</h2>
+        <p>
+            This approach implements the linked lists using two shared, parallel arrays. 
+            It requires only three allocations, rather than a separate allocation for each list. 
+            The lists use array indices instead of pointers, which can reduce memory overhead and improve cache locality.
+            Furthermore, cache locality is improved further since their no gaps between vertices in memory.
+            However, this approach uses extra memory because each node needs a next index, 
+            although it does save some memory by reducing allocation overhead.
+        </p>
+        <p>
+            In the example implementation below, a singly linked list is represented using three arrays. 
+            The first stores the list heads, which index into two parallel arrays: one stores destinations, 
+            and the other stores the index of each node’s successor. A value of −1 marks the end of each list.
+        </p>
+        <pre><code>
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+struct graph {
+    int *heads;
+    int *dsts;
+    int *nexts;
+};
+
+int maxint(a, int b) {
+    return a > b ? a : b;
+}
+
+void graph_create(struct graph *graph, int *srcs, int *dsts, int count) {
+    int i, max = 0;
+    /* get maximum node value */
+    for (i = 0; i < count; i++) {
+        max = maxint(srcs[i], max);
+        max = maxint(dsts[i], max);
+    }
+    graph->heads = malloc((max + 1) * sizeof(int));
+    memset(graph->heads, -1, (max + 1) * sizeof(int)); /* empty lists */
+    graph->dsts = malloc(count * sizeof(int));
+    memcpy(graph->dsts, dsts, count * sizeof(int)); /* direct copy used */
+    graph->nexts = malloc(count * sizeof(int));
+    for (i = 0; i < count; i++) {
+        graph->nexts[i] = graph->heads[srcs[i]];
+        graph->heads[srcs[i]] = i;
+        /* dsts already copied */
+    }
+}
+
+void graph_destroy(struct graph *g) {
+    free(g->heads);
+    free(g->dsts);
+    free(g->nexts);
+}
+        </pre></code>
+        <h2>Approach Three: Sub-arrays</h2>
+        <p>
+            The final approach is similar to the first, but it 
+            builds the adjacency lists in two passes. In the 
+            first pass, it counts the outgoing edges for each 
+            node. These counts determine how much space to 
+            reserve for each adjacency list within a single 
+            array of length equal to the number of edges. In 
+            the second pass, it traverses the edges again and 
+            fills the reserved sections.
+        </p>
+        <p>
+            This approach offers better memory efficiency and cache locality 
+            than the first two approaches. Its main drawback is that it is 
+            difficult to modify the graph after construction, since each 
+            adjacency list occupies a contiguous region of memory and cannot be easily resized.
+        </p>
+        <p>
+            The example implementation uses two arrays: one stores the 
+            destination vertices, and the other stores the start and 
+            end offsets of each adjacency list in the destination array.
+            The length of offset array is one greater than the number
+            of edges since the end of each list is the start of the next 
+            with the exception of the last.
+        </p>
+    </body>
+        <pre><code>
+#include &lt;stdlib.h&gt;
+
+struct graph {
+    int *dsts; /* destination vertices*/
+    int *offs; /* offsets */
+};
+
+int maxint(int a, int b) {
+    return a > b ? a : b;
+}
+
+void graph_create(struct graph *graph, int *srcs, int *dsts, int count) {
+    int i, max = 0;
+    /* get maximum node value */
+    for (i = 0; i < count; i++) {
+        max = maxint(srcs[i], max);
+        max = maxint(dsts[i], max);
+    }
+    graph->dsts = malloc((count + 1) * sizeof(int *));
+    graph->offs = calloc(max + 1, sizeof(int));
+    /* make offs[i] length of ith list*/
+    for (i = 0; i < count; i++) {
+        graph->offs[graph->srcs[i]]++;
+    }
+    /* make offs[i] end of ith list */
+    for (i = 1; i < max; i++) {
+        graph->offs[i] += graphs->offs[i - 1];
+    }
+    /* make offs[i] and offs[i + 1] start and end of ith list */
+    for (i = 0; i < count; i++) {
+        /* populate lists backwards */
+        graph->dsts[--graph->offs[src[i]]] = dsts[i];
+    }
+}
+
+void graph_destroy(struct graph *graph) {
+    free(graph->offs);
+    free(graph->dsts);
+}
+        </pre></code>
+</html>

@@ -6,6 +6,7 @@
     </head>
     <body>
         <h1>Immutable Graph Building</h1>
+        <h2>Introduction</h2>
         <p>
             When constructing a graph, the set of edges is often known in advance.
             If the graph is sparse, an adjacency matrix may 
@@ -16,12 +17,12 @@
         <p>
             For each approach, the example implementation builds a graph from two parallel arrays of non-negative 
             integers representing the edges.
-            It is assumed that node labels are compact enough for an array to map each node to its adjacency list.
+            It is assumed that vertex labels are compact enough for an array to map each node to its adjacency list.
         </p>
         <h2>Approach One: Dynamic Arrays</h2>
         <p>
             The simplest approach is to store each adjacency list in a dynamic array. 
-            This minimizes memory use and improves cache locality because it stores no 
+            This minimizes memory use and maximizes cache locality because it stores no 
             extra data for each connection. 
             However, each list requires a separate allocation, 
             and adding elements can be slow when a full array needs to grow 
@@ -41,7 +42,7 @@ struct graph {
     int count; /* num of lists */
 };
 
-/* Credit to "https://graphics.stanford.edu/~seander/bithacks.html" for this function*/
+/* Credit to "https://graphics.stanford.edu/~seander/bithacks.html" for this function */
 int ispow2(int x) {
     return x && !(x & (x - 1));
 }
@@ -61,11 +62,11 @@ void graph_create(struct graph *graph, int *srcs, int *dsts, int count) {
     graph->lens = calloc(max + 1, sizeof(int));
     graph->count = max + 1;
     for (i = 0; i < count; i++) {
-        if (graph->lens[srcs[i]] == 0) { /* List is empty, grow to capacity four */
+        int len = graph->lens[srcs[i]];
+        if (len == 0) { /* List is empty, grow to capacity four */
             graph->dsts[srcs[i]] = malloc(4 * sizeof(int));
-        } else if (ispow2(graph->lens[srcs[i]])) { /* List is full, double capacity */
-            int newcap = graph->lens[srcs[i]] * 2;
-            graph->dsts[srcs[i]] = realloc(graph->dsts[srcs[i]], newcap * sizeof(int));
+        } else if (len >= 4 && ispow2(len)) { /* List is full, double capacity */
+            graph->dsts[srcs[i]] = realloc(graph->dsts[srcs[i]], len * 2 * sizeof(int));
         }
         graph->dsts[srcs[i]][graph->lens[srcs[i]]++] = dsts[i];
     }
@@ -73,11 +74,11 @@ void graph_create(struct graph *graph, int *srcs, int *dsts, int count) {
 
 void graph_destroy(struct graph *graph) {
     int i;
-    for (i = 0; i < count; i++) {
+    for (i = 0; i < graph->count; i++) {
         free(graph->dsts[i]);
-        free(graph->lens[i]);
     } 
     free(graph->dsts);
+    free(graph->lens);
 }
         </pre></code>
         <h2>Approach Two: Linked Lists</h2>
@@ -85,7 +86,7 @@ void graph_destroy(struct graph *graph) {
             This approach implements the linked lists using two shared, parallel arrays. 
             It requires only three allocations, rather than a separate allocation for each list. 
             The lists use array indices instead of pointers, which can reduce memory overhead and improve cache locality.
-            Furthermore, cache locality is improved further since their no gaps between vertices in memory.
+            Furthermore, cache locality is improved further since there are no gaps between vertices in memory.
             However, this approach uses extra memory because each node needs a next index, 
             although it does save some memory by reducing allocation overhead.
         </p>
@@ -104,7 +105,7 @@ struct graph {
     int *nexts;
 };
 
-int maxint(a, int b) {
+int maxint(int a, int b) {
     return a > b ? a : b;
 }
 
@@ -154,8 +155,8 @@ void graph_destroy(struct graph *g) {
             The example implementation uses two arrays: one stores the 
             destination vertices, and the other stores the start and 
             end offsets of each adjacency list in the destination array.
-            The length of offset array is one greater than the number
-            of edges since the end of each list is the start of the next 
+            The length of offset array is two greater than the max vertex 
+            since the end of each list is the start of the next 
             with the exception of the last.
         </p>
     </body>
@@ -178,26 +179,38 @@ void graph_create(struct graph *graph, int *srcs, int *dsts, int count) {
         max = maxint(srcs[i], max);
         max = maxint(dsts[i], max);
     }
-    graph->dsts = malloc((count + 1) * sizeof(int *));
-    graph->offs = calloc(max + 1, sizeof(int));
+    graph->dsts = malloc((count + 1) * sizeof(int));
+    graph->offs = calloc(max + 2, sizeof(int));
     /* make offs[i] length of ith list*/
     for (i = 0; i < count; i++) {
-        graph->offs[graph->srcs[i]]++;
+        graph->offs[srcs[i]]++;
     }
     /* make offs[i] end of ith list */
-    for (i = 1; i < max; i++) {
-        graph->offs[i] += graphs->offs[i - 1];
+    for (i = 0; i <= max; i++) {
+        graph->offs[i + 1] += graph->offs[i];
     }
     /* make offs[i] and offs[i + 1] start and end of ith list */
     for (i = 0; i < count; i++) {
         /* populate lists backwards */
-        graph->dsts[--graph->offs[src[i]]] = dsts[i];
+        graph->dsts[--graph->offs[srcs[i]]] = dsts[i];
     }
 }
 
 void graph_destroy(struct graph *graph) {
-    free(graph->offs);
     free(graph->dsts);
+    free(graph->offs);
 }
         </pre></code>
+        <h2>Conclusion</h2>
+        <p>
+            The first two approaches both have cache-locality drawbacks. 
+            In the first, each adjacency list is contiguous, 
+            but the lists may be scattered throughout memory. 
+            In the second, all elements occupy two contiguous blocks, 
+            but elements within a list may not be contiguous.
+            The third approach avoids both drawbacks and uses less memory: 
+            unlike the first, it avoids per-list allocation overhead; 
+            unlike the second, it stores no extra data per node. 
+            For immutable graphs, it generally offers the best performance.
+        </p>
 </html>
